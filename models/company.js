@@ -18,26 +18,21 @@ class Company {
 
   static async create({ handle, name, description, numEmployees, logoUrl }) {
     const duplicateCheck = await db.query(
-          `SELECT handle
+      `SELECT handle
            FROM companies
            WHERE handle = $1`,
-        [handle]);
+      [handle]
+    );
 
     if (duplicateCheck.rows[0])
       throw new BadRequestError(`Duplicate company: ${handle}`);
 
     const result = await db.query(
-          `INSERT INTO companies
+      `INSERT INTO companies
            (handle, name, description, num_employees, logo_url)
            VALUES ($1, $2, $3, $4, $5)
            RETURNING handle, name, description, num_employees AS "numEmployees", logo_url AS "logoUrl"`,
-        [
-          handle,
-          name,
-          description,
-          numEmployees,
-          logoUrl,
-        ],
+      [handle, name, description, numEmployees, logoUrl]
     );
     const company = result.rows[0];
 
@@ -51,14 +46,53 @@ class Company {
 
   static async findAll() {
     const companiesRes = await db.query(
-          `SELECT handle,
+      `SELECT handle,
                   name,
                   description,
                   num_employees AS "numEmployees",
                   logo_url AS "logoUrl"
            FROM companies
-           ORDER BY name`);
+           ORDER BY name`
+    );
     return companiesRes.rows;
+  }
+
+  //Find all companies with filtering of name, min/max employees
+  static async findAllFiltered({ name, minEmployees, maxEmployees }) {
+    // Base query without any filters
+    let baseQuery = `SELECT handle, 
+    name, 
+    description, 
+    num_employees AS "numEmployees", 
+    logo_url AS "logoURL" 
+    FROM companies`;
+    // Holds filters for query
+    let queryFilters = [];
+    // Holds values to prevent SQL Injection
+    let queryValues = [];
+
+    // If query parameters include name, Add the filter to queryFilters and add value for that filter to query Values
+    if (name) {
+      queryFilters.push(`name ILIKE $${queryValues.length + 1}`);
+      queryValues.push(`%${name}%`);
+    }
+    // If query parameters include minEmployees, filter to see where num_employees > minEmployees
+    if (minEmployees) {
+      queryFilters.push(`num_employees >= $${queryValues.length + 1}`);
+      queryValues.push(minEmployees);
+    }
+    // If query paramters include maxEployees, filter the companies that are less than max_employees
+    if (maxEmployees) {
+      queryFilters.push(`num_employees <= $${queryValues.length + 1}`);
+      queryValues.push(maxEmployees);
+    }
+    // Join all the filters together and add them to our base query, and separate each filter with the word AND
+    if (queryFilters.length > 0) {
+      baseQuery += " WHERE " + queryFilters.join(" AND ");
+    }
+    // db.query our SQL query and add our list of values to insert into the $parameters
+    const results = await db.query(baseQuery, queryValues);
+    return results.rows;
   }
 
   /** Given a company handle, return data about company.
@@ -71,14 +105,15 @@ class Company {
 
   static async get(handle) {
     const companyRes = await db.query(
-          `SELECT handle,
+      `SELECT handle,
                   name,
                   description,
                   num_employees AS "numEmployees",
                   logo_url AS "logoUrl"
            FROM companies
            WHERE handle = $1`,
-        [handle]);
+      [handle]
+    );
 
     const company = companyRes.rows[0];
 
@@ -100,12 +135,10 @@ class Company {
    */
 
   static async update(handle, data) {
-    const { setCols, values } = sqlForPartialUpdate(
-        data,
-        {
-          numEmployees: "num_employees",
-          logoUrl: "logo_url",
-        });
+    const { setCols, values } = sqlForPartialUpdate(data, {
+      numEmployees: "num_employees",
+      logoUrl: "logo_url",
+    });
     const handleVarIdx = "$" + (values.length + 1);
 
     const querySql = `UPDATE companies 
@@ -131,16 +164,16 @@ class Company {
 
   static async remove(handle) {
     const result = await db.query(
-          `DELETE
+      `DELETE
            FROM companies
            WHERE handle = $1
            RETURNING handle`,
-        [handle]);
+      [handle]
+    );
     const company = result.rows[0];
 
     if (!company) throw new NotFoundError(`No company: ${handle}`);
   }
 }
-
 
 module.exports = Company;
